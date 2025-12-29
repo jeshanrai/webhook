@@ -1,108 +1,140 @@
-require('dotenv').config();
+// Import Express.js
 const express = require('express');
+require('dotenv').config();
 
+// Create an Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'your_verify_token_here';
 
-// Middleware
+// Middleware to parse JSON bodies
 app.use(express.json());
 
-// Health check endpoint
+// Set port and verify_token
+const port = process.env.PORT || 3000;
+const verifyToken = process.env.VERIFY_TOKEN;
+
+// Route for GET requests (Webhook Verification)
 app.get('/', (req, res) => {
-  res.send('Facebook Messenger Webhook Server is running');
-});
+  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
 
-// Webhook GET endpoint for verification
-app.get('/webhook/messenger', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  // Verify the token matches the one you set
-  if (mode && token === VERIFY_TOKEN) {
-    if (mode === 'subscribe') {
-      console.log('✓ Webhook verified successfully');
-      res.status(200).send(challenge);
-    } else {
-      res.sendStatus(403);
-    }
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('✓ WEBHOOK VERIFIED');
+    res.status(200).send(challenge);
   } else {
-    console.error('✗ Webhook verification failed - invalid token or mode');
-    res.sendStatus(403);
+    console.error('✗ Webhook verification failed - invalid token');
+    res.status(403).end();
   }
 });
 
-// Webhook POST endpoint for receiving messages
-app.post('/webhook/messenger', (req, res) => {
+// Alternative GET route for /webhook/messenger
+app.get('/webhook/messenger', (req, res) => {
+  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('✓ WEBHOOK VERIFIED');
+    res.status(200).send(challenge);
+  } else {
+    console.error('✗ Webhook verification failed - invalid token');
+    res.status(403).end();
+  }
+});
+
+// Route for POST requests (Receive Messages)
+app.post('/', (req, res) => {
   const body = req.body;
+  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-  // Check if this is a page subscription confirmation
+  // Check if this is a page event
   if (body.object === 'page') {
-    // Process each entry
     body.entry.forEach((entry) => {
-      // Get the message events from the entry
-      const messaging_events = entry.messaging;
-
-      messaging_events.forEach((event) => {
+      entry.messaging.forEach((event) => {
         const sender_id = event.sender.id;
-        const recipient_id = event.recipient.id;
 
-        // Handle message events
-        if (event.message) {
+        // Handle text messages
+        if (event.message && event.message.text) {
           const message_text = event.message.text;
           const message_id = event.message.mid;
-          const timestamp = event.timestamp;
 
-          console.log('\n--- New Message Received ---');
+          console.log(`\n[${timestamp}] New Message Received`);
           console.log(`Sender ID: ${sender_id}`);
           console.log(`Message ID: ${message_id}`);
           console.log(`Message Text: ${message_text}`);
-          console.log(`Timestamp: ${new Date(timestamp).toISOString()}`);
-          console.log('----------------------------\n');
+          console.log('---\n');
         }
 
-        // Handle postback events (buttons, quick replies, etc.)
+        // Handle postback events
         if (event.postback) {
           const postback_payload = event.postback.payload;
-          console.log(`\nPostback received from ${sender_id}: ${postback_payload}\n`);
+          console.log(`\n[${timestamp}] Postback from ${sender_id}: ${postback_payload}\n`);
         }
 
-        // Handle delivery confirmation
+        // Handle delivery confirmations
         if (event.delivery) {
-          console.log(`Message delivered to ${sender_id}`);
+          console.log(`\n[${timestamp}] Delivery confirmed for ${sender_id}\n`);
         }
 
-        // Handle read receipt
+        // Handle read receipts
         if (event.read) {
-          console.log(`Message read by ${sender_id}`);
+          console.log(`\n[${timestamp}] Message read by ${sender_id}\n`);
         }
       });
     });
 
-    // Return a 200 OK status to acknowledge receipt
-    res.status(200).send('ok');
+    res.status(200).end();
   } else {
-    res.sendStatus(404);
+    res.status(404).end();
   }
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+// Alternative POST route for /webhook/messenger
+app.post('/webhook/messenger', (req, res) => {
+  const body = req.body;
+  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  // Check if this is a page event
+  if (body.object === 'page') {
+    body.entry.forEach((entry) => {
+      entry.messaging.forEach((event) => {
+        const sender_id = event.sender.id;
+
+        // Handle text messages
+        if (event.message && event.message.text) {
+          const message_text = event.message.text;
+          const message_id = event.message.mid;
+
+          console.log(`\n[${timestamp}] New Message Received`);
+          console.log(`Sender ID: ${sender_id}`);
+          console.log(`Message ID: ${message_id}`);
+          console.log(`Message Text: ${message_text}`);
+          console.log('---\n');
+        }
+
+        // Handle postback events
+        if (event.postback) {
+          const postback_payload = event.postback.payload;
+          console.log(`\n[${timestamp}] Postback from ${sender_id}: ${postback_payload}\n`);
+        }
+
+        // Handle delivery confirmations
+        if (event.delivery) {
+          console.log(`\n[${timestamp}] Delivery confirmed for ${sender_id}\n`);
+        }
+
+        // Handle read receipts
+        if (event.read) {
+          console.log(`\n[${timestamp}] Message read by ${sender_id}\n`);
+        }
+      });
+    });
+
+    res.status(200).end();
+  } else {
+    res.status(404).end();
+  }
 });
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(`\n🚀 Webhook server running on port ${PORT}`);
-  console.log(`📍 Webhook endpoint: http://localhost:${PORT}/webhook/messenger`);
-  console.log(`🔐 Using verify token: ${VERIFY_TOKEN.substring(0, 5)}...`);
-  console.log('\nWaiting for messages...\n');
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  process.exit(0);
+app.listen(port, () => {
+  console.log(`\nListening on port ${port}`);
+  console.log(`Webhook endpoints: / and /webhook/messenger`);
+  console.log(`Verify token: ${verifyToken ? verifyToken.substring(0, 5) + '...' : 'NOT SET'}\n`);
 });
